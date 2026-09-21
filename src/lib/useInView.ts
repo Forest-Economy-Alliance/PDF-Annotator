@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+/** Tracks whether an element is within `rootMargin` of the viewport, flipping back to false once it leaves. */
 export function useInView<T extends HTMLElement>(rootMargin = '600px 0px') {
   const ref = useRef<T | null>(null);
   const [inView, setInView] = useState(false);
@@ -7,22 +8,14 @@ export function useInView<T extends HTMLElement>(rootMargin = '600px 0px') {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (inView) return;
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setInView(true);
-            observer.disconnect();
-          }
-        }
-      },
+      (entries) => setInView(entries[entries.length - 1].isIntersecting),
       { rootMargin },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [inView, rootMargin]);
+  }, [rootMargin]);
 
   return { ref, inView };
 }

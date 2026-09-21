@@ -1,8 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { pdfjsLib } from '../../lib/pdfjs';
+import { errorMessage, pdfjsLib, type PDFDocumentLoadingTask, type PDFDocumentProxy } from '../../lib/pdfjs';
 import { db } from '../../db';
 import type { Annotation, Label } from '../../types';
 import { PageView } from './PageView';
@@ -47,6 +46,7 @@ export function PdfViewer({ pdfId, labels, focusRequest }: Props) {
 
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [pageMetas, setPageMetas] = useState<PageMeta[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [scale, setScale] = useState(1.2);
   const [pendingSelection, setPendingSelection] = useState<PendingSelection | null>(null);
   const [editing, setEditing] = useState<EditingAnnotation | null>(null);
@@ -57,37 +57,47 @@ export function PdfViewer({ pdfId, labels, focusRequest }: Props) {
 
   const labelsById = useMemo(() => new Map(labels.map((l) => [l.id, l])), [labels]);
 
-  // Load the PDF document once we have the raw bytes.
+  // Load the PDF document bytes from storage and open them with pdf.js.
   useEffect(() => {
-    if (!pdfRecord) return;
     let cancelled = false;
+    let loadingTask: PDFDocumentLoadingTask | null = null;
     setPdfDoc(null);
     setPageMetas([]);
+    setLoadError(null);
 
     (async () => {
-      const loadingTask = pdfjsLib.getDocument({ data: pdfRecord.data.slice(0) });
-      const doc = await loadingTask.promise;
-      if (cancelled) return;
-      setPdfDoc(doc);
+      try {
+        const file = await db.files.get(pdfId);
+        if (!file) throw new Error('This document is missing from browser storage. Delete it and upload it again.');
+        loadingTask = pdfjsLib.getDocument({ data: file.data.slice(0) });
+        const doc = await loadingTask.promise;
+        if (cancelled) return;
+        setPdfDoc(doc);
 
-      if (pdfRecord.numPages !== doc.numPages) {
-        db.pdfs.update(pdfRecord.id, { numPages: doc.numPages });
-      }
+        const record = await db.pdfs.get(pdfId);
+        if (record && record.numPages !== doc.numPages) {
+          await db.pdfs.update(pdfId, { numPages: doc.numPages });
+        }
 
-      const metas: PageMeta[] = [];
-      for (let i = 1; i <= doc.numPages; i++) {
-        const page = await doc.getPage(i);
-        const viewport = page.getViewport({ scale: 1 });
-        metas.push({ pageNumber: i, width: viewport.width, height: viewport.height });
+        // Measure every page so the scroll area has its full height up front.
+        const metas: PageMeta[] = [];
+        for (let i = 1; i <= doc.numPages; i++) {
+          const page = await doc.getPage(i);
+          if (cancelled) return;
+          const viewport = page.getViewport({ scale: 1 });
+          metas.push({ pageNumber: i, width: viewport.width, height: viewport.height });
+        }
+        setPageMetas(metas);
+      } catch (e) {
+        if (!cancelled) setLoadError(errorMessage(e));
       }
-      if (!cancelled) setPageMetas(metas);
     })();
 
     return () => {
       cancelled = true;
+      loadingTask?.destroy();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfRecord?.id]);
+  }, [pdfId]);
 
   // Scroll to & flash an annotation when requested from the annotation list.
   useEffect(() => {
@@ -202,7 +212,18 @@ export function PdfViewer({ pdfId, labels, focusRequest }: Props) {
         className="pdfViewer relative flex-1 overflow-y-auto bg-neutral-100 p-4 dark:bg-neutral-950"
         style={{ ['--scale-factor' as string]: scale }}
       >
-        {!pdfDoc && <p className="text-center text-sm text-neutral-400">Loading document…</p>}
+        {loadError && (
+          <div
+            role="alert"
+            className="mx-auto mt-8 max-w-md rounded border border-red-300 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
+          >
+            <p className="mb-1 font-semibold">Could not load this PDF</p>
+            <p className="wrap-break-word">{loadError}</p>
+          </div>
+        )}
+        {!loadError && (!pdfDoc || pageMetas.length === 0) && (
+          <p className="text-center text-sm text-neutral-400">Loading document…</p>
+        )}
         {pdfDoc &&
           pageMetas.map((meta) => (
             <PageView

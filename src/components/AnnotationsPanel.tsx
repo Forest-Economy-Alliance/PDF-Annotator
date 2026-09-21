@@ -11,10 +11,15 @@ interface Props {
 }
 
 export function AnnotationsPanel({ pdfId, labels, onFocus }: Props) {
-  const annotations = useLiveQuery(
-    () => db.annotations.where('pdfId').equals(pdfId).sortBy('page'),
-    [pdfId],
-  );
+  const annotations = useLiveQuery(async () => {
+    const all = await db.annotations.where('pdfId').equals(pdfId).toArray();
+    return all.sort(
+      (a, b) =>
+        a.page - b.page ||
+        (a.rects[0]?.y ?? 0) - (b.rects[0]?.y ?? 0) ||
+        (a.start ?? 0) - (b.start ?? 0),
+    );
+  }, [pdfId]);
   const [filterLabelIds, setFilterLabelIds] = useState<Set<string>>(new Set());
 
   const labelsById = useMemo(() => new Map(labels.map((l) => [l.id, l])), [labels]);
@@ -77,7 +82,9 @@ export function AnnotationsPanel({ pdfId, labels, onFocus }: Props) {
             className="group mb-2 cursor-pointer rounded border border-neutral-200 p-2 text-xs hover:border-blue-400 dark:border-neutral-800"
           >
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[10px] font-medium text-neutral-400">Page {annotation.page}</span>
+              <span className="text-[10px] font-medium text-neutral-400">
+                {annotation.start != null ? `Characters ${annotation.start}–${annotation.end}` : `Page ${annotation.page}`}
+              </span>
               <button
                 onClick={(e) => deleteAnnotation(annotation.id, e)}
                 className="opacity-0 group-hover:opacity-100 hover:text-red-600"
@@ -106,7 +113,7 @@ export function AnnotationsPanel({ pdfId, labels, onFocus }: Props) {
         {annotations && filtered.length === 0 && (
           <li className="px-1 py-4 text-center text-xs text-neutral-400">
             {annotations.length === 0
-              ? 'Select text in the PDF to create your first annotation.'
+              ? 'Select text in the document to create your first annotation.'
               : 'No annotations match this filter.'}
           </li>
         )}

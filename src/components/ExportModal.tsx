@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { db } from '../db';
+import { htmlToText } from '../lib/docx';
 import { exportBundle } from '../lib/exporters';
 import type { ExportFormat, ExportScope } from '../types';
 
@@ -33,9 +34,16 @@ export function ExportModal({ currentPdfId, onClose }: Props) {
       const annotations = allAnnotations.filter((a) => pdfIds.has(a.pdfId));
 
       const baseName =
-        scope === 'current' && pdfs[0] ? pdfs[0].name.replace(/\.pdf$/i, '') : 'pdf-annotations';
+        scope === 'current' && pdfs[0] ? pdfs[0].name.replace(/\.(pdf|docx)$/i, '') : 'annotations';
 
-      exportBundle({ pdfs, labels: allLabels, annotations }, format, baseName);
+      const texts = new Map<string, string>();
+      for (const doc of pdfs) {
+        if (doc.kind !== 'docx') continue;
+        const file = await db.files.get(doc.id);
+        if (file?.html) texts.set(doc.id, htmlToText(file.html));
+      }
+
+      exportBundle({ pdfs, labels: allLabels, annotations, texts }, format, baseName);
       onClose();
     } finally {
       setBusy(false);
@@ -59,7 +67,7 @@ export function ExportModal({ currentPdfId, onClose }: Props) {
                   : 'border-neutral-300 dark:border-neutral-700'
               }`}
             >
-              Current PDF
+              Current document
             </button>
             <button
               onClick={() => setScope('all')}
@@ -69,7 +77,7 @@ export function ExportModal({ currentPdfId, onClose }: Props) {
                   : 'border-neutral-300 dark:border-neutral-700'
               }`}
             >
-              All PDFs
+              All documents
             </button>
           </div>
         </div>

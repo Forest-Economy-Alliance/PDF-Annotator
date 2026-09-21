@@ -13,13 +13,13 @@ export function LabelPanel() {
   async function addLabel() {
     const name = newName.trim();
     if (!name) return;
+    setNewName('');
     await db.labels.add({
       id: uuid(),
       name,
       color: nextLabelColor(labels?.length ?? 0),
       createdAt: Date.now(),
     });
-    setNewName('');
   }
 
   async function deleteLabel(id: string) {

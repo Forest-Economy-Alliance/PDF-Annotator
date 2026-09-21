@@ -4,6 +4,7 @@ import { db } from './db';
 import { PdfPanel } from './components/Sidebar/PdfPanel';
 import { LabelPanel } from './components/Sidebar/LabelPanel';
 import { PdfViewer, type FocusRequest } from './components/Viewer/PdfViewer';
+import { DocxViewer } from './components/Viewer/DocxViewer';
 import { AnnotationsPanel } from './components/AnnotationsPanel';
 import { ExportModal } from './components/ExportModal';
 
@@ -13,6 +14,10 @@ function App() {
   const [showExport, setShowExport] = useState(false);
 
   const labels = useLiveQuery(() => db.labels.orderBy('createdAt').toArray(), []) ?? [];
+  const selectedDoc = useLiveQuery(
+    () => (selectedPdfId ? db.pdfs.get(selectedPdfId) : undefined),
+    [selectedPdfId],
+  );
 
   return (
     <div className="flex h-screen flex-col bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
@@ -43,11 +48,17 @@ function App() {
         </aside>
 
         <main className="min-w-0 flex-1">
-          {selectedPdfId ? (
-            <PdfViewer pdfId={selectedPdfId} labels={labels} focusRequest={focusRequest} />
+          {selectedPdfId && selectedDoc ? (
+            selectedDoc.kind === 'docx' ? (
+              <DocxViewer key={selectedPdfId} docId={selectedPdfId} labels={labels} focusRequest={focusRequest} />
+            ) : (
+              <PdfViewer key={selectedPdfId} pdfId={selectedPdfId} labels={labels} focusRequest={focusRequest} />
+            )
+          ) : selectedPdfId ? (
+            <div className="flex h-full items-center justify-center text-sm text-neutral-400">Loading…</div>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-neutral-400">
-              Upload or select a PDF to get started
+              Upload or select a PDF or Word document to get started
             </div>
           )}
         </main>
@@ -61,7 +72,7 @@ function App() {
             />
           ) : (
             <div className="flex h-full items-center justify-center p-4 text-center text-xs text-neutral-400">
-              Annotations will appear here once you select a PDF.
+              Annotations will appear here once you select a document.
             </div>
           )}
         </aside>

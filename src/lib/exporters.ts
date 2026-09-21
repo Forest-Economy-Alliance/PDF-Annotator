@@ -6,6 +6,8 @@ export interface ExportBundle {
   pdfs: PdfDoc[];
   labels: Label[];
   annotations: Annotation[];
+  /** Full extracted text of Word documents, keyed by document id. Annotation start/end index into it. */
+  texts: Map<string, string>;
 }
 
 function labelNames(labelIds: string[], labelsById: Map<string, Label>): string[] {
@@ -17,7 +19,9 @@ function buildJson(bundle: ExportBundle) {
   const documents = bundle.pdfs.map((pdf) => ({
     pdfId: pdf.id,
     name: pdf.name,
+    kind: pdf.kind,
     numPages: pdf.numPages,
+    ...(bundle.texts.has(pdf.id) ? { text: bundle.texts.get(pdf.id) } : {}),
     annotations: bundle.annotations
       .filter((a) => a.pdfId === pdf.id)
       .map((a) => ({
@@ -27,6 +31,7 @@ function buildJson(bundle: ExportBundle) {
         labelIds: a.labelIds,
         labels: labelNames(a.labelIds, labelsById),
         rects: a.rects,
+        ...(a.start != null ? { start: a.start, end: a.end } : {}),
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,
       })),
@@ -50,10 +55,13 @@ function buildCsv(bundle: ExportBundle) {
   const rows = bundle.annotations.map((a) => ({
     pdf_name: pdfsById.get(a.pdfId)?.name ?? a.pdfId,
     pdf_id: a.pdfId,
+    doc_type: pdfsById.get(a.pdfId)?.kind ?? 'pdf',
     page: a.page,
     text: a.text,
     labels: labelNames(a.labelIds, labelsById).join('; '),
     label_ids: a.labelIds.join('; '),
+    start: a.start ?? '',
+    end: a.end ?? '',
     rects: JSON.stringify(a.rects),
     created_at: new Date(a.createdAt).toISOString(),
   }));
@@ -70,11 +78,13 @@ function buildJsonl(bundle: ExportBundle) {
       JSON.stringify({
         pdf_id: a.pdfId,
         pdf_name: pdfsById.get(a.pdfId)?.name ?? a.pdfId,
+        doc_type: pdfsById.get(a.pdfId)?.kind ?? 'pdf',
         page: a.page,
         text: a.text,
         label_ids: a.labelIds,
         labels: labelNames(a.labelIds, labelsById),
         rects: a.rects,
+        ...(a.start != null ? { start: a.start, end: a.end } : {}),
         created_at: a.createdAt,
       }),
     )
